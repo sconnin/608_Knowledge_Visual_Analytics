@@ -1,0 +1,250 @@
+---
+title: "R Notebook"
+output:
+  html_document: default
+  html_notebook: default
+---
+
+**Principles of Data Visualization and Introduction to ggplot2**
+
+I have provided you with data about the 5,000 fastest growing companies in the US, as compiled by Inc. magazine. lets read this in:
+
+```{r}
+
+inc <- read.csv("https://raw.githubusercontent.com/charleyferrari/CUNY_DATA_608/master/module1/Data/inc5000_data.csv", header= TRUE)
+
+```
+
+And lets preview this data:
+
+```{r}
+
+head(inc)
+
+```
+```{r}
+
+summary(inc)
+
+```
+
+Think a bit on what these summaries mean. Use the space below to add some more relevant non-visual exploratory information you think helps you understand this data:
+
+```{r}
+library(magrittr)
+library(tidyverse)
+
+
+# assess the overall structure of the dataset
+
+str(inc)
+
+#count the number of distinct entries for each variable
+
+inc%>%select_if(is.character)%>%
+  map(~n_distinct(c(...), na.rm=T))
+      
+#Standard dev for each numeric col to get a sense for variation
+
+inc%>%summarise_if(is.numeric, sd, na.rm = TRUE)
+
+
+
+
+```
+
+## Question 1
+
+Create a graph that shows the distribution of companies in the dataset by State (ie how many are in each state). There are a lot of States, so consider which axis you should use. This visualization is ultimately going to be consumed on a 'portrait' oriented screen (ie taller than wide), which should further guide your layout choices.
+
+```{r, fig.width=5,fig.height=8}
+
+inc%>%count(State, sort=TRUE)%>%   # count employs implicit group_by, faster processing
+    ggplot(aes(x=reorder(State, n), y=n))+
+    geom_point(color="blue", size = 2)+
+    coord_flip()+
+    labs(title= "Count of Companies by State",x = "State", y = "Number of Companies")+
+    theme(panel.grid.major.x = element_line(color="grey60"), panel.grid.major.y = element_blank(), axis.text.y = element_text(size=10))+
+    theme_bw()
+
+
+
+```
+
+## Quesiton 2
+
+Lets dig in on the state with the 3rd most companies in the data set. Imagine you work for the state and are interested in how many people are employed by companies in different industries. Create a plot that shows the average and/or median employment by industry for companies in this state (only use cases with full data, use R's `complete.cases()` function.) In addition to this, your graph should show how variable the ranges are, and you should deal with outliers.
+
+code for outlier color from : https://stackoverflow.com/questions/52259077/how-to-change-color-of-outliers-when-using-geom-boxplot
+
+```{r}
+
+# Answer Question 2 here
+
+#Explicitly Identify state with third most companies
+
+third<-inc%>%count(State, sort=TRUE)%>%
+    slice(3)
+
+
+inc%>%
+  filter(State %in% "NY")%>%
+  group_by(Industry)%>%
+  summarise(Employees)
+str(third)
+
+#Create initial point plot showing stdev about mean
+
+(ny<-inc%>%
+    filter(complete.cases(.))%>%
+    filter(State %in% "NY")%>%
+    mutate_at(vars(contains('Industry')),as.factor)%>%
+    group_by(Industry)%>%
+    summarize(mn=mean(Employees), sd = sd(Employees))%>%
+    ggplot(aes(x=reorder(Industry, mn), y=mn))+
+    coord_flip()+
+    geom_point()+
+    geom_errorbar(aes(ymin=ifelse(mn-sd<0,0,mn-sd), ymax=mn+sd), width=.2)+
+    labs(x = "Mean Number of Employees", y = "Industry")+
+    ggtitle("Mean Number of Employees \n by Industry in New York State")+
+    theme_bw())
+
+
+#Create a function to remove outliers
+
+remove_outliers <- function(x, na.rm = TRUE, ...) {
+  qnt <- quantile(x, probs=c(.25, .75), na.rm = na.rm, ...)
+  H <- 1.5 * IQR(x, na.rm = na.rm)
+  y <- x
+  y[x < (qnt[1] - H)] <- NA
+  y[x > (qnt[2] + H)] <- NA
+  y
+}
+
+#use function to generate new df with outliers removed from Employees and
+
+(ny_removed<-inc%>%
+    filter(complete.cases(.))%>%
+    filter(State %in% "NY")%>%
+    select(Industry, Employees)%>%
+    group_by(Industry)%>%
+    mutate(Employees = remove_outliers(Employees))%>%
+    summarize(mn=mean(Employees, na.rm=T), sd = sd(Employees, na.rm=T))%>%
+    ggplot(aes(x=reorder(Industry, mn), y=mn))+
+    coord_flip()+
+    geom_point(color="blue", size=2)+
+    geom_errorbar(aes(ymin=ifelse(mn-sd<0,0,mn-sd), ymax=mn+sd), width=.2)+
+    labs(x = "Average", y = "Industry")+
+    ggtitle("Average Number of Employees \n by Industry in New York State")+
+    theme_bw())
+            
+
+#Create boxplots - separate based on employee number range. Keep the outliers
+
+
+(p1<-inc%>%
+    filter(State %in% "NY")%>%
+    mutate_at(vars(contains('Industry')),as.factor)%>%
+    group_by(Industry)%>%
+    filter(Employees<500)%>%
+    ggplot(aes(reorder(x=Industry, Employees, median), y=Employees))+
+    geom_boxplot(outlier.color = "red", 
+               outlier.shape = 21, 
+               outlier.fill = "red")+
+    labs(x = "Industry", y = "Average Number of Employees")+
+    ggtitle("Average Number of Employees by Industry in New York State\n <500")+
+    theme_classic()+
+    theme(axis.text.x = element_text(angle = 45, hjust=1)))
+
+(p2<-inc%>%
+    filter(State %in% "NY")%>%
+    mutate_at(vars(contains('Industry')),as.factor)%>%
+    group_by(Industry)%>%
+    filter(Employees >500 & Employees < 1000)%>%
+    ggplot(aes(reorder(x=Industry, Employees, median), y=Employees))+
+    geom_boxplot(outlier.color = "red", 
+               outlier.shape = 21, 
+               outlier.fill = "red")+
+    labs(x = "Industry", y = "Average Number of Employees")+
+    ggtitle("Average Number of Employees by Industry in New York State\n Between 501 and 1000
+    inclusive")+
+    theme_classic()+
+    theme(axis.text.x = element_text(angle = 45, hjust=1)))
+
+(p3<-inc%>%
+    filter(State %in% "NY")%>%
+    mutate_at(vars(contains('Industry')),as.factor)%>%
+    group_by(Industry)%>%
+    filter(Employees >1000 & Employees <= 3000)%>%
+    ggplot(aes(reorder(x=Industry, Employees, median), y=Employees))+
+    geom_boxplot(outlier.color = "red", 
+               outlier.shape = 21, 
+               outlier.fill = "red")+
+    labs(x = "Industry", y = "Average Number of Employees")+
+    ggtitle("Average Number of Employees by Industry in New York State\n Between 1001 and 3000 inclusive")+
+    theme_classic()+
+    theme(axis.text.x = element_text(angle = 45, hjust=1)))
+
+(p4<-inc%>%
+    filter(State %in% "NY")%>%
+    mutate_at(vars(contains('Industry')),as.factor)%>%
+    group_by(Industry)%>%
+    filter(Employees >3000)%>%
+    ggplot(aes(reorder(x=Industry, Employees, median), y=Employees))+
+    geom_boxplot(outlier.color = "red", 
+               outlier.shape = 21, 
+               outlier.fill = "red")+
+    labs(x = "Industry", y = "Average Number of Employees")+
+    ggtitle("Average Number of Employees by Industry in New York State\n > 3000")+
+    theme_classic()+
+    theme(axis.text.x = element_text(angle = 45, hjust=1)))
+
+#Cant get a good small multiples. How can this be accomplished with so many factors?
+
+
+
+
+
+
+
+```
+```{r, fig.height=10}
+
+inc%>%
+    filter(complete.cases(.))%>%
+    filter(State %in% "NY")%>%
+  #ggplot(aes(reorder(x=Industry, Employees, median), y=Employees))=
+    ggplot(aes(Employees))+
+    coord_flip()+
+    geom_boxplot()+
+    facet_wrap(~Industry, ncol=8, scale="free")
+
+```
+
+
+
+## Question 3
+
+Now imagine you work for an investor and want to see which industries generate the most revenue per employee. Create a chart that makes this information clear. Once again, the distribution per industry should be shown.
+
+```{r}
+
+inc%>%
+  group_by(Industry)%>%
+    mutate(rev_ratio = Revenue/Employees)%>%
+    mutate_at(vars(contains('Industry')), as.factor)%>%
+    ggplot(aes(x=reorder(Industry, log(rev_ratio), na.rm=TRUE), y=log(rev_ratio)))+
+    geom_boxplot(outlier.color = "red", 
+               outlier.shape = 21, 
+               outlier.fill = "red")+
+  labs(title = "Revenue per Employee by Industry", y="Revenue Ratio",x="Industry")+
+  theme_classic()+
+  theme(axis.text=element_text(size=10), axis.title=element_text(size=12))+
+  theme(axis.text.x = element_text(angle = 45, hjust=1))
+ 
+  
+
+
+```
+
+
